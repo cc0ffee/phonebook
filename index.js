@@ -1,55 +1,51 @@
+require('dotenv').config()
 const express = require('express')
 const morgan = require('morgan')
 const cors = require('cors')
 const app = express()
+const Contact = require('./models/contact')
 
 app.use(express.json())
 app.use(morgan('tiny'))
 app.use(cors())
 app.use(express.static('build'))
 
-let contacts = [
-    { 
-      "id": 1,
-      "name": "Arto Hellas", 
-      "number": "040-123456"
-    },
-    { 
-      "id": 2,
-      "name": "Ada Lovelace", 
-      "number": "39-44-5323523"
-    },
-    { 
-      "id": 3,
-      "name": "Dan Abramov", 
-      "number": "12-43-234345"
-    },
-    { 
-      "id": 4,
-      "name": "Mary Poppendieck", 
-      "number": "39-23-6423122"
-    }
-]
+let contacts = []
 
 app.get("/api/persons", (request, response) => {
+    Contact.find({}).then(contacts => {
     response.json(contacts)
+  })
 })
 
-app.get("/api/persons/:id", (request, response) => {
-    const id = Number(request.params.id)
-    const contact = contacts.find(contact => contact.id === id)
-    if (contact) {
-        response.json(contact)
-      } else {
-        response.status(404).end()
+app.get("/api/persons/:id", (request, response, next) => {
+    Contact.findById(request.params.id).then(
+      contact => {
+        if (contact) {
+          response.json(contact)
+          contacts = contacts.filter(contact => contact.id !== id)
+        }
+        else {
+          response.status(404).end()
+        }
       }
+    ).catch(error => {
+      console.log(error)
+      response.status(400).send({ error: 'malformatted id' })
+    })
+    .catch(error => next(error))
 })
 
-app.delete('/api/persons/:id', (request, response) => {
-    const id = Number(request.params.id)
-    contacts = contacts.filter(contact => contact.id !== id)
-  
-    response.status(204).end()
+app.delete('/api/persons/:id', (request, response, next) => {
+    Contact.findByIdAndRemove(request.params.id).then(
+      result => {
+          response.status(204).end()
+      }
+    ).catch(error => {
+      console.log(error)
+      response.status(400).send({ error: 'malformatted id' })
+    })
+    .catch(error => next(error))
   })
 
 const generateId = () => {
@@ -59,30 +55,31 @@ const generateId = () => {
     return maxId + 1
   }
 
-app.post('/api/persons', (request, response) => {
+app.post('/api/persons', (request, response, next) => {
     const body = request.body
   
-    if (!body.content.name || !body.content.number) {
+    if (body.name === undefined) {
       return response.status(400).json({ 
         error: 'The name or number is missing' 
       })
     }
 
-    if (contacts.find((contact) => contact.name === body.content.name)) {
+    if (contacts.find((contact) => contact.name === body.name)) {
       return response.status(400).json({
         error: 'name must be unique'
       })
     }
   
-    const contact = {
+    const contact = new Contact({
       id: generateId(),
-      name: body.content.name,
-      number: body.content.number
-    }
+      name: body.name,
+      number: body.number
+    })
   
-    contacts = contacts.concat(contact)
-  
-    response.json(contact)
+    contact.save().then(result => {
+      response.json(result)
+    })
+    .catch(error => next(error))
   })
   
 
@@ -90,7 +87,7 @@ app.get("/info", (request, response) => {
     response.send(`<div>Phonebook has info for ${contacts.length} people</div><div>${new Date().toString()}</div>`)
 })
 
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
